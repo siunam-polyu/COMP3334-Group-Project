@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title | default("Home") }} | {{ SITE_NAME | default("Uploader") }}</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js" integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</head>
+<body class="bg-gray-100">
+  <nav class="bg-blue-500 p-4">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-white font-bold text-xl"><a href="/" class="text-white" >{{ SITE_NAME | default("Uploader") }}</a></h1>
+      <ul class="flex space-x-4">
+        <a href="/" class="text-white" ><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Home</li></a>
+        {% if request.isAuthenticated %}
+          <a href="/profile" class="text-white"><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Profile</li></a>
+          <a href="/logout" class="text-white"><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Logout</li></a>
+        {% else %}
+        <a href="/login" class="text-white"><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Login</li></a>
+        <a href="/register" class="text-white"><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Register</li></a>
+        {% endif %}
+      </ul>
+    </div>
+  </nav>
+
+  <div class="container mx-auto max-w-xs mt-16">
+    <h1 class="text-4xl font-bold text-center text-gray-800">{{ title | default("Home") }}</h1>
+    {% block content %}{% endblock %}
+  </div>
+
+  {% block script %}{% endblock %}
+</body>
+</html>
