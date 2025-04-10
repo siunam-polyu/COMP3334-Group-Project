@@ -10,79 +10,87 @@ ADMIN_ROLE = 'Admin'
 DEFAULT_USER_ROLE = 'Guest'
 ADMIN_USERNAME = 'admin'
 ADMIN_USER_ID = str(uuid4())
-ADMIN_PASSWORD = utils.password.generatePassword(60)
+ADMIN_PASSWORD = utils.password.generatePassword(50)
 
 def initDatabaseWithSchema():
-    adminPasswordHash = utils.password.generateBcryptHash(ADMIN_PASSWORD).decode()
-    encryptionKey = utils.encryptor.generateEncryptionKey().decode()
+    adminPasswordHash = utils.password.generateBcryptHash(ADMIN_PASSWORD)
+    encryptionKey = utils.encryptor.generateEncryptionKey()
 
-    schema = f'''
-    -- Users table with MFA support
-    CREATE TABLE IF NOT EXISTS users (
-        id TEXT CHECK(length(id) = 36) PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        encryption_key TEXT NOT NULL,
-        role TEXT DEFAULT '{DEFAULT_USER_ROLE}',
-        mfa_secret TEXT,
-        mfa_enabled BOOLEAN DEFAULT 0,
-        last_login DATETIME,
-        failed_login_attempts INTEGER DEFAULT 0,
-        account_locked BOOLEAN DEFAULT 0,
-        account_locked_until DATETIME,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    -- Files table
-    CREATE TABLE IF NOT EXISTS files (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        owner_id INTEGER NOT NULL,
-        filename TEXT NOT NULL,
-        encrypted_data BLOB NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (owner_id) REFERENCES users (id)
-    );
-
-    -- File versions table for versioning support
-    CREATE TABLE IF NOT EXISTS file_versions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        file_id INTEGER NOT NULL,
-        encrypted_data BLOB NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (file_id) REFERENCES files (id)
-    );
-
-    -- Shared files table
-    CREATE TABLE IF NOT EXISTS shared_files (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        file_id INTEGER NOT NULL,
-        shared_with_id INTEGER NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (file_id) REFERENCES files (id),
-        FOREIGN KEY (shared_with_id) REFERENCES users (id)
-    );
-
-    -- Audit logs table
-    CREATE TABLE IF NOT EXISTS audit_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        action TEXT NOT NULL,
-        details TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users (id)
-    );
-
-    -- Create admin user if not exists
-    INSERT INTO users (id, username, password, encryption_key, role)
-        VALUES ('{ADMIN_USER_ID}', '{ADMIN_USERNAME}', '{adminPasswordHash}', '{encryptionKey}', '{ADMIN_ROLE}')
-        ON CONFLICT(username) DO UPDATE SET id = '{ADMIN_USER_ID}', password = '{adminPasswordHash}', encryption_key = '{encryptionKey}', role = '{ADMIN_ROLE}';
-    '''
-    
-    db = getDatabase()
     try:
-        db.executescript(schema)
-        db.commit()
+        createUserTableQuery = f'''
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT CHECK(length(id) = 36) PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            encryption_key TEXT NOT NULL,
+            role TEXT DEFAULT '{DEFAULT_USER_ROLE}',
+            mfa_secret TEXT,
+            mfa_enabled BOOLEAN DEFAULT 0,
+            last_login DATETIME,
+            failed_login_attempts INTEGER DEFAULT 0,
+            account_locked BOOLEAN DEFAULT 0,
+            account_locked_until DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        '''
+        executeQuery(createUserTableQuery)
+
+        createFilesTableQuery = '''
+        CREATE TABLE IF NOT EXISTS files (
+            id TEXT CHECK(length(id) = 36) PRIMARY KEY,
+            owner_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            original_filename TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (owner_id) REFERENCES users (id)
+        );
+        '''
+        executeQuery(createFilesTableQuery)
+
+        createFileVersionsTableQuery = '''
+        CREATE TABLE IF NOT EXISTS file_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER NOT NULL,
+            encrypted_data BLOB NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (file_id) REFERENCES files (id)
+        );
+        '''
+        executeQuery(createFileVersionsTableQuery)
+
+        createSharedFilesTableQuery = '''
+        CREATE TABLE IF NOT EXISTS shared_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER NOT NULL,
+            shared_with_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (file_id) REFERENCES files (id),
+            FOREIGN KEY (shared_with_id) REFERENCES users (id)
+        );
+        '''
+        executeQuery(createSharedFilesTableQuery)
+
+        createAuditLogsTableQuery = '''
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            details TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        );
+        '''
+        executeQuery(createAuditLogsTableQuery)
+
+        insertAdminUserQuery = f'''
+        INSERT INTO users (id, username, password, encryption_key, role)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(username) DO UPDATE SET id = ?, password = ?, encryption_key = ?, role = ?;
+        '''
+        executeQuery(insertAdminUserQuery, (
+            ADMIN_USER_ID, ADMIN_USERNAME, adminPasswordHash, encryptionKey, ADMIN_ROLE, ADMIN_USER_ID, adminPasswordHash, encryptionKey, ADMIN_ROLE
+        ))
     except Exception as error:
         print(f'[ERROR] Unable to init the database: {error}')
         raise error
@@ -92,7 +100,6 @@ def initDatabaseWithSchema():
         print(f'[INFO] Admin username: {ADMIN_USERNAME}')
         print(f'[INFO] Admin password: {ADMIN_PASSWORD}')
         print(f'[INFO] Admin encryption key: {encryptionKey}')
-        db.close()
 
 def getDatabase():
     if 'db' not in g:
@@ -168,7 +175,10 @@ def getUserByUsername(username):
 def getUserIdByUsername(username):
     try:
         user = fetchOne('SELECT id FROM users WHERE username = ?', (username,))
-        return user['id'] if user else None
+        if user is None:
+            raise ValidationError('User not found')
+        
+        return user['id']
     except Exception as error:
         print(f'[ERROR] Unable to fetch user ID by username: {error}')
         raise error
@@ -179,6 +189,33 @@ def getUserById(userId):
         return user
     except Exception as error:
         print(f'[ERROR] Unable to fetch user by ID: {error}')
+        raise error
+
+def getUserEncryptionKey(userId):
+    try:
+        user = fetchOne('SELECT encryption_key FROM users WHERE id = ?', (userId,))
+        if user is None:
+            raise ValidationError('User not found')
+        
+        return user['encryption_key']
+    except Exception as error:
+        print(f'[ERROR] Unable to fetch user encryption key: {error}')
+        raise error
+
+def getUserUploadedOrSharedFilesId(userId):
+    try:
+        getUploadedOrSharedFilesQuery = '''
+        SELECT f.id, f.original_filename, f.created_at, f.owner_id,
+                CASE WHEN f.owner_id = ? THEN 1 ELSE 0 END as is_owner
+        FROM files f
+        LEFT JOIN shared_files sf ON f.id = sf.file_id
+        WHERE f.owner_id = ? OR sf.shared_with_id = ?
+        ORDER BY f.created_at DESC
+        '''
+        files = fetchAll(getUploadedOrSharedFilesQuery, (userId, userId, userId))
+        return files
+    except Exception as error:
+        print(f'[ERROR] Unable to fetch user uploaded files ID: {error}')
         raise error
 
 def login(username, password):
@@ -211,6 +248,17 @@ def resetPassword(userId, newPassword):
         raise error
     except Exception as error:
         print(f'[ERROR] Unable to reset password: {error}')
+        raise error
+
+def insertFileRecord(fileId, ownerId, filename, originalFilename):
+    try:
+        query = '''
+        INSERT INTO files (id, owner_id, filename, original_filename)
+        VALUES (?, ?, ?, ?)
+        '''
+        executeQuery(query, (fileId, ownerId, filename, originalFilename))
+    except Exception as error:
+        print(f'[ERROR] Unable to insert file record: {error}')
         raise error
 
 def closeDatabase(error=None):

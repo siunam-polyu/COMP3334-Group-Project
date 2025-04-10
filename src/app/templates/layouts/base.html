@@ -16,6 +16,7 @@
       <ul class="flex space-x-4">
         <a href="/" class="text-white" ><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Home</li></a>
         {% if request.isAuthenticated %}
+          <a href="/files" class="text-white"><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Uploaded Files</li></a>
           <a href="/profile" class="text-white"><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Profile</li></a>
           <a href="/logout" class="text-white"><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Logout</li></a>
         {% else %}

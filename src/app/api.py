@@ -6,6 +6,7 @@ import utils.database
 import utils.password
 import utils.encryptor
 import utils.authenticator
+import utils.file
 # import base64
 # import pyotp
 # import qrcode
@@ -103,6 +104,27 @@ def resetPassword():
     except Exception as error:
         print(f'Password reset error: {error}')
         return jsonify({'status': False, 'message': 'Password reset failed'}), 500
+
+@apiRoute.route('/upload', methods=('POST',))
+@limiter.limit('10 per minute')
+@utils.authenticator.isAuthenticatedWrapper()
+def upload():
+    try:
+        utils.validator.validateFileUploadForm(request.files)
+
+        uploadedFileId = utils.file.upload(request.user['id'], request.files['file'])
+        logUserAction(request.user['id'], f'Uploaded file. File ID: {uploadedFileId}')
+        
+        return jsonify({
+            'status': True,
+            'message': 'File uploaded successfully',
+            'fileId': uploadedFileId
+        }), 200
+    except utils.validator.ValidationError as error:
+        return jsonify({'status': False, 'message': error.message}), 400
+    except Exception as error:
+        print(f'File upload error: {error}')
+        return jsonify({'status': False, 'message': 'File upload failed'}), 500
 
 # # Add new routes for MFA
 # # @app.route('/setup-mfa', methods=['POST'])
@@ -212,65 +234,6 @@ def resetPassword():
 #         ''', (user_id, user_id, user_id)).fetchall()
         
 #         return jsonify([dict(file) for file in files]), 200
-#     except Exception as e:
-#         return jsonify({'error': str(e)}), 500
-#     finally:
-#         conn.close()
-
-# @app.route('/upload', methods=['POST'])
-# def upload():
-#     token = request.headers.get('Authorization')
-#     if not token:
-#         return jsonify({'error': 'Missing token'}), 401
-    
-#     try:
-#         payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-#         user_id = payload['user_id']
-#     except:
-#         return jsonify({'error': 'Invalid token'}), 401
-    
-#     if 'file' not in request.files:
-#         return jsonify({'error': 'No file provided'}), 400
-    
-#     file = request.files['file']
-#     filename = file.filename
-    
-#     if not utils.validator.isValidateFilename(filename):
-#         return jsonify({'error': 'Invalid filename'}), 400
-    
-#     # Check file size
-#     file.seek(0, 2)  # Seek to end of file
-#     size = file.tell()
-#     file.seek(0)  # Reset file pointer
-#     if size > MAX_FILE_SIZE:
-#         return jsonify({'error': 'File too large. Maximum size is 100MB'}), 400
-    
-#     conn = get_db()
-#     try:
-#         user = conn.execute('SELECT encryption_key FROM users WHERE id = ?', (user_id,)).fetchone()
-#         if not user:
-#             return jsonify({'error': 'User not found'}), 404
-        
-#         # Encrypt file data
-#         f = Fernet(user['encryption_key'])
-#         encrypted_data = f.encrypt(file.read())
-        
-#         # Insert file record
-#         conn.execute('''
-#             INSERT INTO files (filename, encrypted_data, owner_id, created_at)
-#             VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-#         ''', (filename, encrypted_data, user_id))
-#         conn.commit()
-        
-#         # Get the inserted file ID
-#         file_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
-        
-#         logUserAction(user_id, f'uploaded file: {filename}')
-#         return jsonify({
-#             'message': 'File uploaded successfully',
-#             'file_id': file_id,
-#             'filename': filename
-#         }), 201
 #     except Exception as e:
 #         return jsonify({'error': str(e)}), 500
 #     finally:

@@ -1,4 +1,7 @@
+import re
+
 BCRYPT_TRUNCATION_LENGTH = 72
+FILENAME_PATTERN = re.compile(r'^[\w\-_. ]+$')
 
 class ValidationError(Exception):
     def __init__(self, message):
@@ -50,6 +53,18 @@ def validateNewPassword(currentPassword, newPassword, confirmNewPassword):
     
     return True
 
+def validateFilename(filename):
+    if not filename:
+        raise ValidationError('Filename cannot be empty')
+    if len(filename) < 3:
+        raise ValidationError('Filename must be at least 3 characters long')
+    if len(filename) > 255:
+        raise ValidationError('Filename cannot exceed 255 characters')
+    if not FILENAME_PATTERN.match(filename):
+        raise ValidationError('Filename can only contain letters, numbers, dashes, underscores, and spaces')
+    
+    return True
+
 def validateRegisterForm(username, password):
     try:
         validateUsername(username)
@@ -79,5 +94,13 @@ def validatePasswordResetForm(currentPassword, newPassword, confirmNewPassword):
     except ValidationError as error:
         raise error
 
-def isValidateFilename(filename):
-    return '../' not in filename and '..' not in filename
+def validateFileUploadForm(files):
+    try:
+        if 'file' not in files:
+            raise ValidationError('No file provided')
+        
+        file = files['file']
+        filename = file.filename
+        validateFilename(filename)
+    except ValidationError as error:
+        raise error

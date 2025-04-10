@@ -2,13 +2,51 @@
 {% block content %}
 <p class="text-lg text-center text-gray-600 mt-4">Upload and share your files with ease</p>
 <div class="flex justify-center mt-8">
-  <input type="file" class="px-4 py-2 bg-blue-500 text-white rounded-lg cursor-pointer">
-  <button class="ml-4 px-6 py-2 bg-blue-700 text-white rounded-lg">Upload</button>
+  <form id="file-upload-form" class="max-w-md w-full bg-white shadow-md rounded-lg px-4 py-4">
+    <div class="mb-4">
+      <label class="block text-sm font-semibold text-gray-700 mb-4" for="file-input">Select a file to upload</label>
+      <input type="file" name="file-input" id="file-input" class="block w-full py-2 px-3 border border-gray-300 rounded-lg bg-gray-100 text-gray-800 shadow-sm focus:outline-none focus:ring focus:ring-blue-500 focus:border-blue-500 cursor-pointer" accept="*">
+    </div>
+    <button type="submit" class="w-full bg-blue-500 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg focus:outline-none focus:ring focus:ring-blue-300 focus:border-blue-300 cursor-pointer">Upload</button>
+  </form>
 </div>
 {% endblock %}
 
 {% block script %}
 <script>
-  
+$(document).ready(function() {
+  $('#file-upload-form').submit(function(event) {
+    event.preventDefault();
+
+    const formData = new FormData();
+    const file = $('#file-input')[0].files[0];
+    formData.append('file', file);
+
+    $.ajax({
+      type: 'POST',
+      url: '/api/upload',
+      data: formData,
+      processData: false,
+      contentType: false,
+      success: async function(response) {
+        if (response.status === false) {
+          alert(response.message);
+          return;
+        }
+
+        alert(response.message);
+        // document.location.assign('/');
+      },
+      error: function(xhr, status, error) {
+        if (xhr.status === 400) {
+          alert(xhr.responseJSON.message);
+          return;
+        }
+        alert(`An error occurred: ${xhr.responseJSON.message}`);
+        return;
+      }
+    });
+  });
+});
 </script>
 {% endblock %}
