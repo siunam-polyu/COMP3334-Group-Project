@@ -28,8 +28,9 @@ $(document).ready(function() {
           alert(response.message);
           return;
         }
-        if (!response.token) {
-          alert('Missing JWT token in response');
+        if (response.mfa_enabled) {
+          alert(response.message);
+          document.location.assign(`/mfa?username=${response.username}`);
           return;
         }
 
@@ -41,6 +42,11 @@ $(document).ready(function() {
           alert(xhr.responseJSON.message);
           return;
         }
+        if (xhr.status === 429) {
+          alert('You are sending requests too quickly. Please wait a moment and try again.');
+          return;
+        }
+        
         alert(`An error occurred: ${xhr.responseJSON.message}`);
         return;
       }

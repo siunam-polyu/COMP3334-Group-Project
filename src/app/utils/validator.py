@@ -1,7 +1,13 @@
+from flask import request
+from email.utils import parseaddr
 import re
+import config
+import utils.authenticator
 
 BCRYPT_TRUNCATION_LENGTH = 72
+UUIDV4_LENGTH = 36
 FILENAME_PATTERN = re.compile(r'^[\w\-_. ]+$')
+HEX_PATTERN = re.compile(r'[0-9a-f]+')
 
 class ValidationError(Exception):
     def __init__(self, message):
@@ -65,6 +71,39 @@ def validateFilename(filename):
     
     return True
 
+def validateFileId(fileId):
+    if not fileId:
+        raise ValidationError('File ID cannot be empty')
+    if not isinstance(fileId, str):
+        raise ValidationError('File ID must be a string')
+    if len(fileId) != UUIDV4_LENGTH:
+        raise ValidationError('Invalid File ID format')
+    
+    return True
+
+def validateUserId(userId):
+    if not userId:
+        raise ValidationError('User ID cannot be empty')
+    if not isinstance(userId, str):
+        raise ValidationError('User ID must be a string')
+    if len(userId) != UUIDV4_LENGTH:
+        raise ValidationError('Invalid User ID format')
+    
+    return True
+
+def validateMfaCode(mfaCode):
+    if not mfaCode:
+        raise ValidationError('MFA code cannot be empty')
+    if not isinstance(mfaCode, str):
+        raise ValidationError('MFA code must be a string')
+    if len(mfaCode) != config.MFA_CODE_LENGTH:
+        raise ValidationError(f'MFA code must be {config.MFA_CODE_LENGTH} characters long')
+    
+    if not mfaCode.isdigit():
+        raise ValidationError('MFA code must contain only digits')
+    
+    return True
+
 def validateRegisterForm(username, password):
     try:
         validateUsername(username)
@@ -104,3 +143,85 @@ def validateFileUploadForm(files):
         validateFilename(filename)
     except ValidationError as error:
         raise error
+
+def validateFileDownloadForm(fileId):
+    try:
+        validateFileId(fileId)
+        
+        return True
+    except ValidationError as error:
+        raise error
+    
+def validateShareFileForm(fileId, shareWithUsername):
+    try:
+        validateFileId(fileId)
+        validateUsername(shareWithUsername)
+        if shareWithUsername == request.user['username']:
+            raise ValidationError('Cannot share file with yourself')
+        
+        return True
+    except ValidationError as error:
+        raise error
+    
+def validateMfaSetupFirstStepForm(email):
+    try:
+        if utils.database.isMfaEnabled(request.user['id']):
+            raise ValidationError('MFA is already enabled')
+        
+        if not email:
+            raise ValidationError('Email cannot be empty')
+        if not isinstance(email, str):
+            raise ValidationError('Email must be a string')
+        if len(email) > 255:
+            raise ValidationError('Email cannot exceed 255 characters')
+        
+        parseaddr(email)        
+        return True
+    except ValidationError as error:
+        raise error
+    except Exception as error:
+        raise ValidationError('Invalid email address format')
+    
+def validateMfaSetupSecondStepForm(token):
+    try:
+        if utils.database.isMfaEnabled(request.user['id']):
+            raise ValidationError('MFA is already enabled')
+        
+        if not token:
+            raise ValidationError('Token cannot be empty')
+        if not isinstance(token, str):
+            raise ValidationError('Token must be a string')
+        if len(token) != (config.MFA_VERIFY_TOKEN_LENGTH * 2):
+            raise ValidationError(f'Token must be {(config.MFA_VERIFY_TOKEN_LENGTH * 2)} characters long')
+        
+        if not HEX_PATTERN.match(token):
+            raise ValidationError('Token must contain only hexadecimal characters')
+        
+        return True
+    except ValidationError as error:
+        raise error
+    
+def validateMfaRequest(username):
+    try:
+        validateUsername(username)
+        if not utils.authenticator.isMfaRequired(username):
+            raise ValidationError('MFA is not required for this user')
+        
+        return True
+    except ValidationError as error:
+        raise error
+    except Exception as error:
+        raise ValidationError('Error while validating MFA request')
+
+def validateMfaVerifyForm(username, mfaCode):
+    try:
+        validateUsername(username)
+        validateMfaCode(mfaCode)
+        if not utils.authenticator.isMfaRequired(username):
+            raise ValidationError('MFA is not required for this user')
+        
+        return True
+    except ValidationError as error:
+        raise error
+    except Exception as error:
+        raise ValidationError('Error while validating MFA verification form')

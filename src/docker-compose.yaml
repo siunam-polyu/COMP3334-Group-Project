@@ -3,5 +3,14 @@ services:
     build:
       context: ./
     restart: unless-stopped
+    environment:
+      # MFA: by default, it'll use your gmail account to send the MFA code
+      # you can use your own SMTP server by setting the following environment variables
+      # SENDER_EMAIL_ADDRESS: the email address to send the MFA code from (use your gmail address if using gmail SMTP server)
+      # SENDER_EMAIL_PASSWORD: the password for the email address (use app password if using gmail)
+      # SMTP_SERVER_DOMAIN: the SMTP server to use (default: smtp.gmail.com)
+      # SMTP_SERVER_PORT: the port to use (default: 587)
+      # - SENDER_EMAIL_ADDRESS=your_gmail_address@gmail.com
+      # - SENDER_EMAIL_PASSWORD=your_gmail_app_password
     ports:
-      - 5000:5000
+      - 443:443

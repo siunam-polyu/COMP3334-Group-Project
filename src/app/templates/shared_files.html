@@ -1,0 +1,29 @@
+{% extends 'layouts/base.html' %}
+{% block content %}
+<div class="file mt-4">
+  {% for file in files %}
+    {% set file = dict(file) %}
+      {% if file.shared_with_id %}
+        <div class="bg-white p-4 rounded-lg shadow-md mb-4">
+          <div class="flex items-center justify-between mb-2">
+            {% if file.owner_id == request.user.id %}
+              <span class="text-lg font-semibold">File {{ file.original_filename }} - Share To:</span>
+            {% else %}
+              <span class="text-lg font-semibold">File {{ file.original_filename }} - Shared By: {{ file.owner_username }}</span>
+            {% endif %}
+          </div>
+          <p class="text-gray-600">Created at: {{ file.created_at }}</p>
+          {% if file.owner_id == request.user.id %}
+            <p class="text-gray-600">Owner: {{ file.owner_username }}</p>
+            <p class="text-gray-600">Shared with: {{ file.shared_with_username }}</p>
+          {% endif %}
+          <a href="/api/file/{{ file.id }}" target="_blank"><button class="w-full bg-blue-500 hover:bg-blue-700 text-white font-semibold py-2 mt-4 rounded-lg focus:outline-none focus:ring focus:ring-blue-300 focus:border-blue-300 cursor-pointer">Download</button></a>
+        </div>
+      {% endif %}
+  {% endfor %}
+
+  {% if files|length == 0 %}
+    <p class="text-lg text-center text-gray-600 mt-4">No files available.</p>
+  {% endif %}
+</div>
+{% endblock %}

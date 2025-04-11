@@ -16,7 +16,11 @@
       <ul class="flex space-x-4">
         <a href="/" class="text-white" ><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Home</li></a>
         {% if request.isAuthenticated %}
+          {% if request.user.role == 'Admin' %}
+            <a href="/audit-logs" class="text-white"><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Audit Logs</li></a>
+          {% endif %}
           <a href="/files" class="text-white"><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Uploaded Files</li></a>
+          <a href="/shared" class="text-white"><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Shared Files</li></a>
           <a href="/profile" class="text-white"><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Profile</li></a>
           <a href="/logout" class="text-white"><li class="bg-blue-700 hover:bg-blue-900 p-2 rounded-lg">Logout</li></a>
         {% else %}
@@ -27,7 +31,7 @@
     </div>
   </nav>
 
-  <div class="container mx-auto max-w-xs mt-16">
+  <div class="container mx-auto max-w-lg mt-16">
     <h1 class="text-4xl font-bold text-center text-gray-800">{{ title | default("Home") }}</h1>
     {% block content %}{% endblock %}
   </div>

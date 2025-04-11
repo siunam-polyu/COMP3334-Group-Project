@@ -24,7 +24,7 @@ $(document).ready(function() {
 
     $.ajax({
       type: 'POST',
-      url: '/api/upload',
+      url: '/api/file/upload',
       data: formData,
       processData: false,
       contentType: false,
@@ -35,13 +35,18 @@ $(document).ready(function() {
         }
 
         alert(response.message);
-        // document.location.assign('/');
+        document.location.assign('/files');
       },
       error: function(xhr, status, error) {
         if (xhr.status === 400) {
           alert(xhr.responseJSON.message);
           return;
         }
+        if (xhr.status === 429) {
+          alert('You are sending requests too quickly. Please wait a moment and try again.');
+          return;
+        }
+        
         alert(`An error occurred: ${xhr.responseJSON.message}`);
         return;
       }

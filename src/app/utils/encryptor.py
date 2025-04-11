@@ -10,5 +10,14 @@ def encryptFile(userId, data):
         fernet = Fernet(userEncryptionKey)
         return fernet.encrypt(data)
     except Exception as error:
-        print(f'Encryption failed: {error}')
+        print(f'[ERROR] Encryption failed: {error}')
+        raise error
+    
+def decryptFile(userId, encryptedData, fileId=str()):
+    try:
+        userEncryptionKey = utils.database.getUserEncryptionKey(userId, fileId)
+        fernet = Fernet(userEncryptionKey)
+        return fernet.decrypt(encryptedData).decode('utf-8')
+    except Exception as error:
+        print(f'[ERROR] Decryption failed: {error}')
         raise error

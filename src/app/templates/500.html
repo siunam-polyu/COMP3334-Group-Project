@@ -1,4 +1,7 @@
 {% extends 'layouts/base.html' %}
 {% block content %}
-<p class="text-lg text-center text-gray-600 mt-4">Looks like the server is broken :(</p>
+<p class="text-lg text-center text-gray-600 mt-4">Looks like the server is broken or you did something wrong :(</p>
+{% if error %}
+  <p class="text-lg text-center text-gray-600 mt-4">Error: {{ error }}</p>
+{% endif %}
 {% endblock %}

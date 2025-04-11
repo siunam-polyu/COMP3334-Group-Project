@@ -37,6 +37,11 @@ $(document).ready(function() {
           alert(xhr.responseJSON.message);
           return;
         }
+        if (xhr.status === 429) {
+          alert('You are sending requests too quickly. Please wait a moment and try again.');
+          return;
+        }
+        
         alert(`An error occurred: ${xhr.responseJSON.message}`);
         return;
       }

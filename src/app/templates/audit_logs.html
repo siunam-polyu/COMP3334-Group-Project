@@ -1,0 +1,23 @@
+{% extends 'layouts/base.html' %}
+{% block content %}
+<div class="file mt-4">
+  {% for log in logs %}
+    {% set log = dict(log) %}
+      <div class="bg-white p-4 rounded-lg shadow-md mb-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-lg font-semibold">Log ID: {{ log.id }}</span>
+        </div>
+        <p class="text-gray-600">Action: {{ log.action }}</p>
+        <p class="text-gray-600">Username: {{ log.username }}</p>
+        <p class="text-gray-600">Timestamp: {{ log.created_at }}</p>
+        {% if log.details %}
+          <p class="text-gray-600">Details: {{ log.details }}</p>
+        {% endif %}
+      </div>
+  {% endfor %}
+
+  {% if logs|length == 0 or logs == None %}
+    <p class="text-lg text-center text-gray-600 mt-4">No audit logs available.</p>
+  {% endif %}
+</div>
+{% endblock %}

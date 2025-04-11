@@ -1,19 +1,16 @@
 import sqlite3
+import utils.authenticator
 import utils.password
 import utils.encryptor
+import utils.mail
+import config
 from flask import g
 from utils.validator import ValidationError
 from uuid import uuid4
-
-DATABASE_FILE_PATH = 'database.db'
-ADMIN_ROLE = 'Admin'
-DEFAULT_USER_ROLE = 'Guest'
-ADMIN_USERNAME = 'admin'
-ADMIN_USER_ID = str(uuid4())
-ADMIN_PASSWORD = utils.password.generatePassword(50)
+from datetime import datetime
 
 def initDatabaseWithSchema():
-    adminPasswordHash = utils.password.generateBcryptHash(ADMIN_PASSWORD)
+    adminPasswordHash = utils.password.generateBcryptHash(config.ADMIN_PASSWORD)
     encryptionKey = utils.encryptor.generateEncryptionKey()
 
     try:
@@ -23,8 +20,12 @@ def initDatabaseWithSchema():
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             encryption_key TEXT NOT NULL,
-            role TEXT DEFAULT '{DEFAULT_USER_ROLE}',
-            mfa_secret TEXT,
+            role TEXT DEFAULT '{config.DEFAULT_USER_ROLE}',
+            mfa_email TEXT,
+            mfa_verify_token TEXT,
+            mfa_verify_token_expiry DATETIME,
+            mfa_code TEXT,
+            mfa_code_expiry DATETIME,
             mfa_enabled BOOLEAN DEFAULT 0,
             last_login DATETIME,
             failed_login_attempts INTEGER DEFAULT 0,
@@ -89,22 +90,21 @@ def initDatabaseWithSchema():
             ON CONFLICT(username) DO UPDATE SET id = ?, password = ?, encryption_key = ?, role = ?;
         '''
         executeQuery(insertAdminUserQuery, (
-            ADMIN_USER_ID, ADMIN_USERNAME, adminPasswordHash, encryptionKey, ADMIN_ROLE, ADMIN_USER_ID, adminPasswordHash, encryptionKey, ADMIN_ROLE
+            config.ADMIN_USER_ID, config.ADMIN_USERNAME, adminPasswordHash, encryptionKey, config.ADMIN_ROLE, config.ADMIN_USER_ID, adminPasswordHash, encryptionKey, config.ADMIN_ROLE
         ))
     except Exception as error:
         print(f'[ERROR] Unable to init the database: {error}')
         raise error
     finally:
         print('[INFO] Database initialized with schema')
-        print(f'[INFO] Admin user ID: {ADMIN_USER_ID}')
-        print(f'[INFO] Admin username: {ADMIN_USERNAME}')
-        print(f'[INFO] Admin password: {ADMIN_PASSWORD}')
-        print(f'[INFO] Admin encryption key: {encryptionKey}')
+        print(f'[INFO] Admin user ID: {config.ADMIN_USER_ID}')
+        print(f'[INFO] Admin username: {config.ADMIN_USERNAME}')
+        print(f'[INFO] Admin password: {config.ADMIN_PASSWORD}')
 
 def getDatabase():
     if 'db' not in g:
         g.db = sqlite3.connect(
-            DATABASE_FILE_PATH,
+            config.DATABASE_FILE_PATH,
             detect_types=sqlite3.PARSE_DECLTYPES
         )
         g.db.row_factory = sqlite3.Row
@@ -128,7 +128,11 @@ def fetchOne(query, values=tuple(), parseAsDict=False):
         if not parseAsDict:
             return cursor.fetchone()
         
-        return dict(cursor.fetchone())
+        result = cursor.fetchone()
+        if result is None:
+            return None
+
+        return dict(result)
     except Exception as error:
         print(f'[ERROR] Unable to fetch one row: {error}')
         raise error
@@ -149,7 +153,7 @@ def isUsernameExists(username):
         print(f'[ERROR] Unable to check if username exists: {error}')
         raise error
 
-def register(username, hashedPassword, encryptionKey, role=DEFAULT_USER_ROLE):
+def register(username, hashedPassword, encryptionKey, role=config.DEFAULT_USER_ROLE):
     try:
         if isUsernameExists(username):
             raise ValidationError('Username already exists')
@@ -160,6 +164,7 @@ def register(username, hashedPassword, encryptionKey, role=DEFAULT_USER_ROLE):
         VALUES (?, ?, ?, ?, ?)
         '''
         executeQuery(query, (userId, username, hashedPassword, encryptionKey, role))
+        return userId
     except Exception as error:
         print(f'[ERROR] Unable to register user: {error}')
         raise error
@@ -167,6 +172,8 @@ def register(username, hashedPassword, encryptionKey, role=DEFAULT_USER_ROLE):
 def getUserByUsername(username):
     try:
         user = fetchOne('SELECT * FROM users WHERE username = ?', (username,), True)
+        if user is None:
+            raise ValidationError('User not found')
         return user
     except Exception as error:
         print(f'[ERROR] Unable to fetch user by username: {error}')
@@ -191,9 +198,12 @@ def getUserById(userId):
         print(f'[ERROR] Unable to fetch user by ID: {error}')
         raise error
 
-def getUserEncryptionKey(userId):
+def getUserEncryptionKey(userId, fileId=str()):
     try:
-        user = fetchOne('SELECT encryption_key FROM users WHERE id = ?', (userId,))
+        if not fileId:
+            user = fetchOne('SELECT encryption_key FROM users WHERE id = ?', (userId,))
+        else:
+            user = fetchOne('SELECT u.encryption_key FROM users u JOIN files f ON u.id = f.owner_id WHERE f.id = ?', (fileId,))
         if user is None:
             raise ValidationError('User not found')
         
@@ -215,15 +225,153 @@ def getUserUploadedOrSharedFilesId(userId):
         files = fetchAll(getUploadedOrSharedFilesQuery, (userId, userId, userId))
         return files
     except Exception as error:
-        print(f'[ERROR] Unable to fetch user uploaded files ID: {error}')
+        print(f'[ERROR] Unable to fetch user uploaded or shared files ID: {error}')
+        raise error
+
+def getUserSharedFiles(userId):
+    try:
+        getSharedFilesQuery = '''
+        SELECT f.id, f.original_filename, f.created_at, f.owner_id, 
+                u1.username as owner_username,
+                CASE WHEN f.owner_id = ? THEN 1 ELSE 0 END as is_owner,
+                sf.shared_with_id, u2.username as shared_with_username
+        FROM files f
+        LEFT JOIN shared_files sf ON f.id = sf.file_id
+        LEFT JOIN users u1 ON f.owner_id = u1.id
+        LEFT JOIN users u2 ON sf.shared_with_id = u2.id
+        WHERE f.owner_id = ? OR sf.shared_with_id = ?
+        ORDER BY f.created_at DESC
+        '''
+        files = fetchAll(getSharedFilesQuery, (userId, userId, userId))
+        return files
+    except Exception as error:
+        print(f'[ERROR] Unable to fetch user shared files: {error}')
+        raise error
+
+def getUserUploadedFiles(userId):
+    try:
+        getUploadedFilesQuery = '''
+        SELECT f.id, f.original_filename, f.created_at, f.owner_id, u.username as owner_username,
+                CASE WHEN f.owner_id = ? THEN 1 ELSE 0 END as is_owner
+        FROM files f
+        LEFT JOIN users u ON f.owner_id = u.id
+        WHERE f.owner_id = ?
+        ORDER BY f.created_at DESC
+        '''
+        files = fetchAll(getUploadedFilesQuery, (userId, userId))
+        return files
+    except Exception as error:
+        print(f'[ERROR] Unable to fetch user uploaded or shared files ID: {error}')
+        raise error
+
+def getUploadedFileRecord(fileId, userId):
+    try:
+        getFileRecordQuery = '''
+        SELECT f.* FROM files f
+            WHERE f.id = ? AND f.owner_id = ?
+        '''
+        fileRecord = fetchOne(getFileRecordQuery, (fileId, userId), True)
+        if fileRecord is None:
+            raise ValidationError('File not found or not owned by you')
+        return fileRecord
+    except Exception as error:
+        print(f'[ERROR] Unable to fetch uploaded file record: {error}')
+        raise error
+
+def getUploadedOrSharedFileRecord(fileId, userId):
+    try:
+        getFileRecordQuery = '''
+        SELECT f.* FROM files f
+            WHERE f.id = ? AND (f.owner_id = ? OR EXISTS (
+                SELECT 1 FROM shared_files sf WHERE sf.file_id = f.id AND sf.shared_with_id = ?
+            ))
+        '''
+        fileRecord = fetchOne(getFileRecordQuery, (fileId, userId, userId), True)
+        if fileRecord is None:
+            raise ValidationError('File not found or not accessible')
+        return fileRecord
+    except Exception as error:
+        print(f'[ERROR] Unable to fetch file record: {error}')
+        raise error
+
+def getAuditLogs():
+    try:
+        getAuditLogsQuery = '''
+            SELECT al.*, u.username 
+            FROM audit_logs al 
+            JOIN users u ON al.user_id = u.id 
+            ORDER BY al.created_at DESC
+        '''
+        logs = fetchAll(getAuditLogsQuery)
+        return logs
+    except Exception as error:
+        print(f'[ERROR] Unable to fetch audit logs: {error}')
+        raise error
+
+def getMfaVerifyToken(userId):
+    try:
+        token = fetchOne('SELECT mfa_verify_token, mfa_verify_token_expiry FROM users WHERE id = ?', (userId,))
+        if token is None:
+            raise ValidationError('User not found')
+        
+        return {'token': token['mfa_verify_token'], 'expiryDate': token['mfa_verify_token_expiry']}
+    except Exception as error:
+        print(f'[ERROR] Unable to fetch MFA verify token: {error}')
+        raise error
+
+def getMfaUserEmail(userId):
+    try:
+        email = fetchOne('SELECT mfa_email FROM users WHERE id = ?', (userId,))
+        if email is None:
+            raise ValidationError('User not found')
+        
+        return email['mfa_email']
+    except Exception as error:
+        print(f'[ERROR] Unable to fetch MFA user email: {error}')
+        raise error
+
+def initMfa(userId):
+    try:
+        mfaCode = utils.authenticator.generateMfaCode()
+        query = f'''
+        UPDATE users SET mfa_code = ?, mfa_code_expiry = datetime('now', '+{config.MFA_CODE_EXPIRE_MINUTE} minute'), mfa_verify_token = NULL WHERE id = ?
+        '''
+        executeQuery(query, (mfaCode, userId))
+
+        email = getMfaUserEmail(userId)
+        utils.mail.send(email, 'MFA Code', f'Your MFA code is: {mfaCode}')
+    except ValidationError as error:
+        raise error
+    except Exception as error:
+        print(f'[ERROR] Unable to initialize MFA: {error}')
+        raise error
+
+def isMfaEnabled(userId):
+    try:
+        user = getUserById(userId)
+        if user is None:
+            raise ValidationError('User not found')
+        
+        return user['mfa_enabled'] == 1
+    except ValidationError as error:
+        raise error
+    except Exception as error:
+        print(f'[ERROR] Unable to fetch MFA status: {error}')
+        raise error
+
+def isMfaPending(userId):
+    try:
+        token = fetchOne('SELECT mfa_code FROM users WHERE mfa_code IS NOT NULL AND id = ?', (userId,))
+        if token is None:
+            return False
+        return True
+    except Exception as error:
+        print(f'[ERROR] Unable to check if MFA is pending: {error}')
         raise error
 
 def login(username, password):
     try:
         user = getUserByUsername(username)
-        if user is None:
-            raise ValidationError('Invalid username or password')
-
         passwordHash = user['password']
         isCorrectPassword = utils.password.verifyBcryptHash(password, passwordHash)
         if not isCorrectPassword:
@@ -259,6 +407,131 @@ def insertFileRecord(fileId, ownerId, filename, originalFilename):
         executeQuery(query, (fileId, ownerId, filename, originalFilename))
     except Exception as error:
         print(f'[ERROR] Unable to insert file record: {error}')
+        raise error
+
+def checkFileAlreadySharedToUser(fileId, sharedWithId):
+    try:
+        query = '''
+        SELECT * FROM shared_files
+        WHERE file_id = ? AND shared_with_id = ?
+        '''
+        result = fetchOne(query, (fileId, sharedWithId))
+        if result is not None:
+            raise ValidationError('File already shared with this user')
+    except Exception as error:
+        print(f'[ERROR] Unable to check if file is already shared: {error}')
+        raise error
+
+def shareFile(fileId, ownerId, sharedWithUsername):
+    try:
+        file = getUploadedFileRecord(fileId, ownerId)
+        shareUser = getUserByUsername(sharedWithUsername)
+        checkFileAlreadySharedToUser(fileId, shareUser['id'])
+
+        query = '''
+        INSERT INTO shared_files (file_id, shared_with_id)
+        VALUES (?, ?)
+        '''
+        executeQuery(query, (file['id'], shareUser['id']))
+    except ValidationError as error:
+        raise error
+    except Exception as error:
+        print(f'[ERROR] Unable to share file: {error}')
+        raise error
+
+def deleteFileRecord(fileId, userId):
+    try:
+        fileRecord = getUploadedFileRecord(fileId, userId)
+        query = '''
+        DELETE FROM files WHERE id = ? AND owner_id = ?
+        '''
+        executeQuery(query, (fileRecord['id'], userId))
+    except ValidationError as error:
+        raise error
+    except Exception as error:
+        print(f'[ERROR] Unable to delete file record: {error}')
+        raise error
+
+def unsetMfaVerifyToken(userId):
+    try:
+        query = '''
+        UPDATE users SET mfa_verify_token = NULL, mfa_verify_token_expiry = NULL WHERE id = ?
+        '''
+        executeQuery(query, (userId,))
+    except Exception as error:
+        print(f'[ERROR] Unable to unset MFA verify token: {error}')
+        raise error
+
+def setMfaEnabledStatus(userId, status):
+    try:
+        query = '''
+        UPDATE users SET mfa_enabled = ? WHERE id = ?
+        '''
+        executeQuery(query, (status, userId))
+    except Exception as error:
+        print(f'[ERROR] Unable to set MFA enabled status: {error}')
+        raise error
+
+def setupMfaFirstStep(userId, token, email):
+    try:
+        query = f'''
+        UPDATE users SET mfa_verify_token = ?, mfa_verify_token_expiry = datetime('now', '+{config.MFA_CODE_EXPIRE_MINUTE} minute'), mfa_email = ? WHERE id = ?
+        '''
+        executeQuery(query, (token, email, userId))
+    except Exception as error:
+        print(f'[ERROR] Unable to setup MFA: {error}')
+        raise error
+
+def setupMfaSecondStep(userId, token):
+    try:
+        verifyToken = getMfaVerifyToken(userId)
+        if verifyToken['token'] != token:
+            raise ValidationError('Invalid MFA verify token')
+        
+        parsedDatetime = datetime.strptime(verifyToken['expiryDate'], config.SQLITE_DATETIME_FORMAT)
+        if parsedDatetime > datetime.now():
+            unsetMfaVerifyToken(userId)
+            raise ValidationError('MFA verify token expired')
+        
+        unsetMfaVerifyToken(userId)
+        setMfaEnabledStatus(userId, True)
+        token = utils.authenticator.setMfaStatus(True)
+        return token
+    except ValidationError as error:
+        raise error
+    except Exception as error:
+        print(f'[ERROR] Unable to setup MFA: {error}')
+        raise error
+
+def unsetMfaCode(userId):
+    try:
+        query = '''
+        UPDATE users SET mfa_code = NULL, mfa_code_expiry = NULL WHERE id = ?
+        '''
+        executeQuery(query, (userId,))
+    except Exception as error:
+        print(f'[ERROR] Unable to unset MFA code: {error}')
+        raise error
+
+def verifyMfaCode(username, mfaCode):
+    try:
+        user = getUserByUsername(username)
+        if user is None:
+            raise ValidationError('User not found')
+        if user['mfa_code'] != mfaCode:
+            raise ValidationError('Invalid MFA code')
+        
+        parsedDatetime = datetime.strptime(user['mfa_code_expiry'], config.SQLITE_DATETIME_FORMAT)
+        if parsedDatetime > datetime.now():
+            unsetMfaCode(user['id'])
+            raise ValidationError('MFA code expired')
+        
+        unsetMfaCode(user['id'])
+        return user
+    except ValidationError as error:
+        raise error
+    except Exception as error:
+        print(f'[ERROR] Unable to verify MFA code: {error}')
         raise error
 
 def closeDatabase(error=None):

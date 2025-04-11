@@ -1,0 +1,26 @@
+from os import getenv
+from uuid import uuid4
+from utils.password import generatePassword
+
+MAXIMUM_100MB_FILESIZE = 100 * 1024 * 1024
+APP_PORT = getenv('APP_PORT', 5000)
+
+DATABASE_FILE_PATH = 'database.db'
+ADMIN_ROLE = 'Admin'
+DEFAULT_USER_ROLE = 'Guest'
+ADMIN_USER_ID = str(uuid4())
+ADMIN_USERNAME = getenv('ADMIN_USERNAME', 'admin')
+ADMIN_PASSWORD = getenv('ADMIN_PASSWORD', generatePassword(50))
+
+JWT_EXPIRE_HOUR = 24
+JWT_ALGORITHM = 'HS256'
+
+SENDER_EMAIL_ADDRESS = getenv('SENDER_EMAIL_ADDRESS', '')
+SENDER_EMAIL_PASSWORD = getenv('SENDER_EMAIL_PASSWORD', '')
+SMTP_SERVER_DOMAIN = getenv('SMTP_SERVER_DOMAIN', 'smtp.gmail.com')
+SMTP_SERVER_PORT = getenv('SMTP_SERVER_PORT', 587)
+
+MFA_VERIFY_TOKEN_LENGTH = 32
+MFA_CODE_LENGTH = 6
+MFA_CODE_EXPIRE_MINUTE = 1
+SQLITE_DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'

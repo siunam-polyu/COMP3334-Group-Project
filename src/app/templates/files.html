@@ -1,14 +1,33 @@
 {% extends 'layouts/base.html' %}
 {% block content %}
-
-<div class="file">
+<div class="file mt-4">
   {% for file in files %}
     {% set file = dict(file) %}
-      <div>
-        <h2 class="text-2xl font-bold text-center text-gray-800 my-4">File: {{ file.original_filename }}</h2>
-        {# <p class="text-lg text-center text-gray-600">Uploaded by: {{ file.uploaded_by }}</p> #}
-        <p class="text-lg text-center text-gray-600">File ID: <a href="/download/{{ file.id }}">{{ file.id }}</a></p>
-        {# <p class="text-lg text-center text-gray-600">File URL: <a href="{{ file.url }}" class="text-blue-500 hover:underline">{{ file.url }}</a></p> #}
+      <div class="bg-white p-4 rounded-lg shadow-md mb-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-lg font-semibold">File: {{ file.original_filename }}</span>
+          <form id="file-delete-form">
+            <input type="hidden" name="delete-file-id" value="{{ file.id }}" readonly>
+            <button class="text-red-500 hover:text-red-700 cursor-pointer">Delete</button>
+          </form>
+        </div>
+        <p class="text-gray-600">Created at: {{ file.created_at }}</p>
+        <p class="text-gray-600">Owner: {{ file.owner_username }}</p>
+        <p class="text-gray-600">Owned by you? {{ 'Yes' if file.is_owner else 'No' }}</p>
+        {% if file.is_owner %}
+          {% if file.is_shared %}
+            <p class="text-gray-600">Shared with: {{ file.shared_with_username }}</p>
+          {% else %}
+            <p class="text-gray-600">Shared with: Not shared with anyone.</p>
+          {% endif %}
+
+          <form id="file-share-form">
+            <input type="hidden" name="file-id" value="{{ file.id }}" readonly>
+            <input type="text" name="share-with-username" placeholder="Enter username to share with" class="w-full p-2 border border-gray-300 rounded-lg mt-4" required>
+            <button type="submit" class="w-full bg-blue-500 hover:bg-blue-700 text-white font-semibold py-2 mt-4 rounded-lg focus:outline-none focus:ring focus:ring-blue-300 focus:border-blue-300 cursor-pointer">Share</button>
+          </form>
+        {% endif %}
+        <a href="/api/file/{{ file.id }}" target="_blank"><button class="w-full bg-blue-500 hover:bg-blue-700 text-white font-semibold py-2 mt-4 rounded-lg focus:outline-none focus:ring focus:ring-blue-300 focus:border-blue-300 cursor-pointer">Download</button></a>
       </div>
   {% endfor %}
 
@@ -16,5 +35,85 @@
     <p class="text-lg text-center text-gray-600 mt-4">No files available.</p>
   {% endif %}
 </div>
+{% endblock %}
 
+{% block script %}
+<script>
+$(document).ready(function() {
+  const fileShareForm = $('#file-share-form');
+  if (fileShareForm.length !== 0) {
+    fileShareForm.submit(function(event) {
+      event.preventDefault();
+      var fileId = $(this).find('input[name="file-id"]').val();
+      var shareWithUsername = $(this).find('input[name="share-with-username"]').val();
+
+      var formData = new FormData();
+      formData.append('share-with-username', shareWithUsername);
+      $.ajax({
+        type: 'POST',
+        url: `/api/file/${fileId}/share`,
+        data: formData,
+        processData: false,
+        contentType: false,
+        success: function(response) {
+          if (response.status === false) {
+            alert(response.message);
+            return;
+          }
+          
+          alert(response.message);
+        },
+        error: function(xhr, status, error) {
+          if (xhr.status === 400) {
+            alert(xhr.responseJSON.message);
+            return;
+          }
+          if (xhr.status === 429) {
+            alert('You are sending requests too quickly. Please wait a moment and try again.');
+            return;
+          }
+          
+          alert(`An error occurred: ${xhr.responseJSON.message}`);
+          return;
+        }
+      });
+    });
+  }
+
+  $('#file-delete-form').submit(function(event) {
+    event.preventDefault();
+    if (!confirm('Are you sure you want to delete this file?')) {
+      return;
+    }
+
+    var fileId = $(this).find('input[name="delete-file-id"]').val();
+    $.ajax({
+      type: 'DELETE',
+      url: `/api/file/${fileId}`,
+      success: function(response) {
+        if (response.status === false) {
+          alert(response.message);
+          return;
+        }
+        
+        alert(response.message);
+        document.location.reload();
+      },
+      error: function(xhr, status, error) {
+        if (xhr.status === 400) {
+          alert(xhr.responseJSON.message);
+          return;
+        }
+        if (xhr.status === 429) {
+          alert('You are sending requests too quickly. Please wait a moment and try again.');
+          return;
+        }
+        
+        alert(`An error occurred: ${xhr.responseJSON.message}`);
+        return;
+      }
+    });
+  });
+});
+</script>
 {% endblock %}

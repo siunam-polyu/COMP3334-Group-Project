@@ -8,6 +8,24 @@
   <label class="block text-sm font-medium text-gray-700">Role:</label>
   <p class="text-gray-900">{{ request.user['role'] | default('N/A') }}</p>
 </div>
+<div class="mb-4">
+  <label class="block text-sm font-medium text-gray-700">MFA Status:</label>
+  <p class="text-gray-900">{{ 'Enabled' if request.user['mfa_enabled'] else 'Not enabled' }}</p>
+</div>
+{% if not request.user['mfa_enabled'] %}
+<hr class="mb-4">
+<h2 class="text-2xl font-bold text-center text-gray-800 mb-4">Setup MFA (OTP)</h1>
+<form id="setup-mfa-form" class="mb-4">
+  <div class="mb-4">
+    <label for="email" class="block text-sm font-medium text-gray-700">Email Address:</label>
+    <input type="email" id="email" name="email" class="w-full px-3 py-2 placeholder-gray-400 border rounded-lg focus:outline-none focus:ring focus:border-blue-300" placeholder="Enter your email address">
+  </div>
+  <div class="flex justify-center">
+    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:ring focus:border-blue-300 cursor-pointer">Setup</button>
+  </div>
+</form>
+{% endif %}
+
 <hr class="mb-4">
 <h2 class="text-2xl font-bold text-center text-gray-800 mb-4">Reset Password</h1>
 <form id="reset-password-form">
@@ -53,6 +71,43 @@ $(document).ready(function() {
           alert(xhr.responseJSON.message);
           return;
         }
+        if (xhr.status === 429) {
+          alert('You are sending requests too quickly. Please wait a moment and try again.');
+          return;
+        }
+
+        alert(`An error occurred: ${xhr.responseJSON.message}`);
+        return;
+      }
+    });
+  });
+
+  $('#setup-mfa-form').submit(function(event) {
+    event.preventDefault();
+    var formData = $(this).serialize();
+    $.ajax({
+      type: 'POST',
+      url: '/api/setup-mfa-1',
+      data: formData,
+      success: async function(response) {
+        if (response.status === false) {
+          alert(response.message);
+          return;
+        }
+
+        alert(response.message);
+        document.location.reload();
+      },
+      error: function(xhr, status, error) {
+        if (xhr.status === 400) {
+          alert(xhr.responseJSON.message);
+          return;
+        }
+        if (xhr.status === 429) {
+          alert('You are sending requests too quickly. Please wait a moment and try again.');
+          return;
+        }
+        
         alert(`An error occurred: ${xhr.responseJSON.message}`);
         return;
       }
