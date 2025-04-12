@@ -11,8 +11,8 @@ RUN apk update && \
     chmod 755 /cert.pem /key.pem
 
 COPY ./app .
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip uninstall -y jwt # to avoid conflict with PyJWT
+COPY ./requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 RUN rm -f /app/*.db /app/requirements.txt
 
